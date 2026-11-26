@@ -88,13 +88,17 @@ public class MainActivity extends Activity {
         LinearLayout layout=column();layout.setBackgroundColor(BG);layout.setPadding(dp(10),dp(14),dp(10),dp(10));
         EditText address=new EditText(this);address.setSingleLine(true);address.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_URI);address.setHint("https://website.example");address.setText(prefs.getString("lastWebsite","https://server.elscione.com/"));
         WebView web=new WebView(this);web.setBackgroundColor(WHITE);
-        web.getSettings().setJavaScriptEnabled(false);
+        web.getSettings().setJavaScriptEnabled(true);
+        web.getSettings().setDomStorageEnabled(true);
+        web.getSettings().setJavaScriptCanOpenWindowsAutomatically(false);
+        web.getSettings().setSupportMultipleWindows(false);
+        web.getSettings().setSafeBrowsingEnabled(true);
         web.getSettings().setAllowFileAccess(false);web.getSettings().setAllowContentAccess(false);
         web.getSettings().setMixedContentMode(android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         Runnable open=()->{String url=address.getText().toString().trim();if(!url.contains("://"))url="https://"+url;if(!https(url)){toast("Use an HTTPS website");return;}prefs.edit().putString("lastWebsite",url).apply();web.loadUrl(url);};
         LinearLayout nav=row();nav.addView(button("Back",v->{if(web.canGoBack())web.goBack();}),weight());nav.addView(button("Go",v->open.run()),weight());nav.addView(button("Close",v->dialog.dismiss()),weight());layout.addView(nav);layout.addView(address,full());
         LinearLayout shortcuts=row();shortcuts.addView(button("Elscione",v->{address.setText("https://server.elscione.com/");open.run();}),weight());shortcuts.addView(button("Open in browser",v->{String url=address.getText().toString();if(https(url))try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(url)));}catch(Exception e){toast("No browser installed");}}),weight());layout.addView(shortcuts);
-        layout.addView(label("Tap a permitted file link to download. Sites requiring scripts or sign-in may need your normal browser.",13,MUTED),full());
+        layout.addView(label("Tap a permitted file link to download. If a website requires verification or blocks this browser, use Open in browser.",13,MUTED),full());
         web.setWebViewClient(new WebViewClient(){
             @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request){
                 String url=request.getUrl().toString();if(!https(url))return true;
