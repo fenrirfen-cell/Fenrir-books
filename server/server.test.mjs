@@ -11,5 +11,10 @@ test('catalog, search, download, missing format and invalid paths',async()=>{
   assert.equal((await fetch(base+'/api/v1/books/ozymandias/download/pdf')).status,404);
   assert.equal((await fetch(base+'/catalog.json')).status,404);
   assert.equal((await fetch(base+'/')).status,200);
+  const scan=await (await fetch(base+'/api/v1/catalog-links?q=shelley')).json();
+  assert.equal(scan.source,'fenrir-authorized-catalog-v1');
+  assert.equal(scan.links.length,1);
+  assert.equal(scan.links[0].downloadUrl,'/api/v1/books/ozymandias/download/epub');
+  assert.equal((await (await fetch(base+'/api/v1/catalog-links?q=missing')).json()).links.length,0);
  }finally{await new Promise(r=>s.close(r));}
 });

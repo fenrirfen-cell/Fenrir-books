@@ -56,6 +56,7 @@ public class MainActivity extends Activity {
         LinearLayout options=row();options.addView(button("Book source",v->sourceDialog()),weight());options.addView(button("Add HTTPS link",v->directDialog()),weight());body.addView(options);
         body.addView(button("Browse websites",v->browserDialog()),full());
         body.addView(button("Saved links",v->savedLinksDialog()),full());
+        body.addView(button("Scan my catalog for links",v->scanCatalogLinks()),full());
         body.addView(button("Discord Files · Open in browser",v->openDiscordFiles()),full());
         search=new EditText(this);search.setSingleLine(true);search.setHint("Search title or author");search.setHintTextColor(MUTED);search.setTextColor(WHITE);search.setBackground(box(PANEL,12));search.setPadding(dp(14),dp(13),dp(14),dp(13));body.addView(search,full());search.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH);search.setOnEditorActionListener((v,a,e)->{load(false);return true;});
         body.addView(button("Search catalog",v->load(false)),full());
@@ -87,6 +88,32 @@ public class MainActivity extends Activity {
     private void confirmDownload(String address,String filename,String kind){
         if(!https(address)||kind==null)return;
         new AlertDialog.Builder(this).setTitle("Download "+kind+"?").setMessage(filename+"\nFrom: "+Uri.parse(address).getHost()+"\nOnly download books you have permission to save.").setNegativeButton("Cancel",null).setPositiveButton("Download",(d,w)->enqueue(filename,kind,address)).show();
+    }
+    private void scanCatalogLinks(){
+        final String source=base(),query=search.getText().toString().trim();
+        if(!https(source)){toast("Configure your authorized Fenrir Books API under Book source first.");return;}
+        status.setText("Collecting links from your catalog…");
+        worker.execute(()->{try{
+            JSONObject response=getJson(source+"/api/v1/catalog-links?q="+URLEncoder.encode(query,"UTF-8"));
+            if(!"fenrir-authorized-catalog-v1".equals(response.optString("source")))throw new IOException("Unsupported catalog");
+            JSONArray entries=response.getJSONArray("links");ArrayList<String> names=new ArrayList<>(),urls=new ArrayList<>();
+            HashSet<String> seen=new HashSet<>();
+            for(int i=0;i<entries.length()&&i<100;i++){
+                JSONObject item=entries.getJSONObject(i);String path=item.optString("downloadUrl");
+                if(!path.matches("/api/v1/books/[a-z0-9-]+/download/(epub|pdf)")||item.optString("license").trim().isEmpty())continue;
+                String url=new URI(source+"/").resolve(path).toString();
+                if(!sameOrigin(source,url)||!seen.add(url))continue;
+                names.add(item.optString("title","Book")+" · "+item.optString("format").toUpperCase(Locale.ROOT));urls.add(url);
+            }
+            ui.post(()->{if(isFinishing()||!source.equals(base()))return;status.setText("Found "+names.size()+" eligible links");if(names.isEmpty()){toast("No eligible links found");return;}
+                boolean[] selected=new boolean[names.size()];Arrays.fill(selected,true);
+                new AlertDialog.Builder(this).setTitle("Collected "+names.size()+" catalog links").setMultiChoiceItems(names.toArray(new String[0]),selected,(d,i,checked)->selected[i]=checked).setNegativeButton("Cancel",null).setPositiveButton("Save selected",(d,w)->{
+                    JSONArray saved=savedLinks();HashSet<String> existing=new HashSet<>();for(int i=0;i<saved.length();i++){JSONObject item=saved.optJSONObject(i);if(item!=null)existing.add(item.optString("url"));}
+                    int count=0;for(int i=0;i<selected.length&&saved.length()<500;i++)if(selected[i]&&existing.add(urls.get(i))){try{JSONObject item=new JSONObject();item.put("title",names.get(i));item.put("url",urls.get(i));saved.put(item);count++;}catch(JSONException ignored){}}
+                    prefs.edit().putString("savedLinks",saved.toString()).apply();toast(count+" new links saved");
+                }).show();
+            });
+        }catch(Exception e){ui.post(()->{if(!isFinishing())status.setText("Link collection failed. Use the updated authorized Fenrir Books server.");});}});
     }
     private JSONArray savedLinks(){try{return new JSONArray(prefs.getString("savedLinks","[]"));}catch(Exception e){return new JSONArray();}}
     private void openExternal(String url){if(!https(url)){toast("Enter a valid HTTPS address");return;}try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(url)));}catch(android.content.ActivityNotFoundException e){toast("No browser installed");}}

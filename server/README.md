@@ -19,6 +19,7 @@ Use your server's HTTPS base URL in production. On Android emulator, for local t
 - GET /api/v1/books?q=search — returns `{"books":[...]}`
 - GET /api/v1/books/ozymandias — title metadata and available formats
 - GET /api/v1/books/ozymandias/download/epub — streams a file with content type and length
+- GET /api/v1/catalog-links?q=search — lists up to 100 eligible local book download links for the Android app's link collector. It does not crawl external websites.
 
 In Fenrir Read, map the response to existing book models and use Android's standard download manager or existing download implementation. Resolve relative downloadUrl against the configured base URL; save EPUB/PDF through the existing import flow. No changes have been made to the Android app yet.
 

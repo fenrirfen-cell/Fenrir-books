@@ -16,6 +16,21 @@ export function createServer(){return http.createServer(async(req,res)=>{
       const q=(u.searchParams.get('q')||'').trim().toLowerCase();
       return json(res,200,{books:catalog.filter(b=>[b.title,b.author,b.description].join(' ').toLowerCase().includes(q)).map(publicBook)});
     }
+    // Opt-in link collection from this server's own configured book files.
+    // This endpoint never fetches or crawls another website.
+    if(u.pathname==='/api/v1/catalog-links'){
+      const links=[],q=(u.searchParams.get('q')||'').trim().toLowerCase();
+      for(const b of catalog){
+        if(!/^[a-z0-9-]+$/.test(b.id)||typeof b.license!=='string'||!b.license.trim()||!b.formats||![b.title,b.author,b.description].join(' ').toLowerCase().includes(q))continue;
+        for(const [format,name] of Object.entries(b.formats)){
+          if(!types[format]||typeof name!=='string'||name!==basename(name)||!name.endsWith('.'+format))continue;
+          try{if(!(await stat(resolve(root,'books',name))).isFile())continue;}catch{continue;}
+          links.push({title:b.title,format,license:b.license,downloadUrl:'/api/v1/books/'+b.id+'/download/'+format});
+          if(links.length>=100)return json(res,200,{source:'fenrir-authorized-catalog-v1',links});
+        }
+      }
+      return json(res,200,{source:'fenrir-authorized-catalog-v1',links});
+    }
     const m=u.pathname.match(/^\/api\/v1\/books\/([a-z0-9-]+)(?:\/download\/(epub|pdf))?$/);
     if(m){
       const b=catalog.find(x=>x.id===m[1]);
