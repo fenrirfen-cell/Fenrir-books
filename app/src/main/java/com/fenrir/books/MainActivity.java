@@ -140,6 +140,33 @@ public class MainActivity extends Activity {
         try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse("https://server.elscione.com/Discord%20Files/")));}
         catch(android.content.ActivityNotFoundException e){toast("No browser installed");}
     }
+    private void scanPage(WebView web){
+        final String page=web.getUrl();if(!https(page)){toast("Open an HTTPS page first");return;}
+        web.evaluateJavascript("(function(){const m=document.querySelector('meta[name=\"fenrir-link-collection\"][content=\"allowed\"]'); if(!m)return {allowed:false,items:[]}; const items=[];const seen=new Set(); for(const x of document.querySelectorAll('a[data-fenrir-download=\"allowed\"][href]')){if(items.length>=100)break; if(!x.getClientRects().length)continue;let u;try{u=new URL(x.href);}catch(e){continue;}if(u.protocol!=='https:'||u.origin!==location.origin||u.username||u.password||seen.has(u.href))continue;const f=(x.dataset.fenrirFormat||'').toUpperCase();if(!['EPUB','PDF','MOBI','AZW3','CBZ','FB2','TXT'].includes(f))continue;seen.add(u.href);items.push({url:u.href,title:(x.innerText||u.pathname).trim().slice(0,200),format:f});}return {allowed:true,items};})()",raw->{
+            if(isFinishing()||!page.equals(web.getUrl()))return;
+            try{
+                JSONObject response=new JSONObject(raw);if(!response.optBoolean("allowed")){toast("This website has not enabled automated link collection.");return;}
+                JSONArray items=response.getJSONArray("items");ArrayList<String> titles=new ArrayList<>(),urls=new ArrayList<>(),formats=new ArrayList<>();
+                HashSet<String> seen=new HashSet<>();
+                for(int i=0;i<items.length()&&i<100;i++){
+                    JSONObject item=items.getJSONObject(i);String url=item.optString("url"),format=item.optString("format");if(!sameOrigin(page,url)||!Arrays.asList(FORMATS).contains(format)||!seen.add(url))continue;
+                    String path=new URI(url).getPath();if(path==null)continue;String filenameFormat=fileFormat(path,null);
+                    boolean apiPath=path.matches("/api/v1/books/[a-z0-9-]+/download/(epub|pdf)")&&path.endsWith("/"+format.toLowerCase(Locale.ROOT));
+                    if(!format.equals(filenameFormat)&&!apiPath)continue;
+                    titles.add(item.optString("title","Book")+" · "+format);urls.add(url);formats.add(format);
+                }
+                if(titles.isEmpty()){toast("No opted-in direct book files found on this page");return;}
+                boolean[] selected=new boolean[titles.size()];
+                AlertDialog selection=new AlertDialog.Builder(this).setTitle("Found "+titles.size()+" book links").setMultiChoiceItems(titles.toArray(new String[0]),selected,(d,i,checked)->selected[i]=checked).setNegativeButton("Cancel",null).setPositiveButton("Queue selected",null).create();
+                selection.setOnShowListener(d->selection.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
+                    int count=0;for(boolean checked:selected)if(checked)count++;
+                    if(count<1||count>20){toast("Select between 1 and 20 files");return;}
+                    final int total=count;
+                    new AlertDialog.Builder(this).setTitle("Download "+total+" selected files?").setMessage("Only queue files you have permission to download in bulk.").setNegativeButton("Cancel",null).setPositiveButton("Download",(dd,w)->{selection.dismiss();for(int i=0;i<selected.length;i++)if(selected[i])enqueue(titles.get(i),formats.get(i),urls.get(i));}).show();
+                }));selection.show();
+            }catch(Exception e){toast("Could not scan this page");}
+        });
+    }
     private void browserDialog(){
         android.app.Dialog dialog=new android.app.Dialog(this,android.R.style.Theme_Material_NoActionBar);
         LinearLayout layout=column();layout.setBackgroundColor(BG);layout.setPadding(dp(10),dp(14),dp(10),dp(10));
@@ -157,6 +184,7 @@ public class MainActivity extends Activity {
         LinearLayout shortcuts=row();shortcuts.addView(button("Elscione",v->{address.setText("https://server.elscione.com/");open.run();}),weight());shortcuts.addView(button("Open in browser",v->{String url=address.getText().toString();if(https(url))try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(url)));}catch(Exception e){toast("No browser installed");}}),weight());layout.addView(shortcuts);
         layout.addView(button("Discord Files · Open in browser",v->openDiscordFiles()),full());
         LinearLayout bookmarks=row();bookmarks.addView(button("Save current page",v->{String url=web.getUrl();if(url!=null&&https(url))saveLink(web.getTitle()==null?"":web.getTitle(),url);else toast("Open a web page first");}),weight());bookmarks.addView(button("Saved links",v->savedLinksDialog()),weight());layout.addView(bookmarks);
+        layout.addView(button("Scan page · opted-in websites",v->scanPage(web)),full());
         layout.addView(label("Tap a permitted file link to download. If a website requires verification or blocks this browser, use Open in browser.",13,MUTED),full());
         web.setWebViewClient(new WebViewClient(){
             @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request){
