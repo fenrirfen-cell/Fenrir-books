@@ -38,6 +38,8 @@ public class MainActivity extends Activity {
     private SharedPreferences prefs;
     private DownloadManager dm;
     private String next;
+    private final ArrayList<Book> currentBooks=new ArrayList<>();
+    private String currentCatalogSource="";
     private int generation=0;
     private boolean queueVisible=false;
     private final Runnable tick=new Runnable(){public void run(){if(queueVisible)showDownloads();ui.postDelayed(this,2500);}};
@@ -56,6 +58,7 @@ public class MainActivity extends Activity {
         body.addView(button("Discord Files · Open in browser",v->openDiscordFiles()),full());
         search=new EditText(this);search.setSingleLine(true);search.setHint("Search title or author");search.setHintTextColor(MUTED);search.setTextColor(WHITE);search.setBackground(box(PANEL,12));search.setPadding(dp(14),dp(13),dp(14),dp(13));body.addView(search,full());search.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH);search.setOnEditorActionListener((v,a,e)->{load(false);return true;});
         body.addView(button("Search catalog",v->load(false)),full());
+        body.addView(button("Batch download · My catalog",v->batchDialog()),full());
         status=label("",14,MUTED);body.addView(status,full());results=column();body.addView(results,full());queue=column();queue.setVisibility(View.GONE);body.addView(queue,full());
         showCatalog();load(false);ui.postDelayed(tick,2500);
     }
@@ -128,7 +131,7 @@ public class MainActivity extends Activity {
     private void load(boolean more){
         showCatalog();final int token=++generation;String source=base(),query=search.getText().toString().trim();final boolean gutenberg=source.isEmpty();String url;
         try{url=more?next:(gutenberg?"https://gutendex.com/books/?copyright=false&search=":source+"/api/v1/books?q=")+URLEncoder.encode(query,"UTF-8");}catch(Exception e){return;}
-        if(url==null)return;if(!more)results.removeAllViews();status.setText("Loading books…");
+        if(url==null)return;if(!more){results.removeAllViews();currentBooks.clear();currentCatalogSource="";}status.setText("Loading books…");
         worker.execute(()->{try{
             JSONObject json=getJson(url);JSONArray books=json.getJSONArray(gutenberg?"results":"books");String newNext=gutenberg&&!json.isNull("next")?json.optString("next",null):null;
             ArrayList<Book> found=new ArrayList<>();for(int i=0;i<books.length();i++){
@@ -137,8 +140,26 @@ public class MainActivity extends Activity {
                 else{book.author=b.optString("author","Unknown author");book.description=b.optString("description")+" · "+b.optString("license");if(b.optString("license").trim().isEmpty())continue;JSONArray formats=b.optJSONArray("formats");if(formats!=null)for(int j=0;j<formats.length();j++){JSONObject f=formats.getJSONObject(j);String kind=f.optString("format").toUpperCase(Locale.ROOT);String link=new URI(source+"/").resolve(f.optString("downloadUrl")).toString();if((kind.equals("EPUB")||kind.equals("PDF"))&&https(link))book.links.put(kind,link);}}
                 if(!book.links.isEmpty())found.add(book);
             }
-            ui.post(()->{if(token!=generation||isFinishing())return;if(more&&results.getChildCount()>0)results.removeViewAt(results.getChildCount()-1);for(Book b:found)addCard(b);next=newNext;if(next!=null)results.addView(button("Load more",v->load(true)),full());status.setText(found.isEmpty()?"No downloadable matches.":gutenberg?"Project Gutenberg · Public-domain catalog":"Your authorized catalog");});
+            ui.post(()->{if(token!=generation||isFinishing())return;if(more&&results.getChildCount()>0)results.removeViewAt(results.getChildCount()-1);currentBooks.addAll(found);currentCatalogSource=gutenberg?"":source;for(Book b:found)addCard(b);next=newNext;if(next!=null)results.addView(button("Load more",v->load(true)),full());status.setText(found.isEmpty()?"No downloadable matches.":gutenberg?"Project Gutenberg · Public-domain catalog":"Your authorized catalog");});
         }catch(Exception e){ui.post(()->{if(token==generation)status.setText("Could not load catalog. Check connection or source, then search again.");});}});
+    }
+    private boolean sameOrigin(String source,String link){
+        try{URI a=new URI(source),b=new URI(link);return https(source)&&https(link)&&a.getHost().equalsIgnoreCase(b.getHost())&&(a.getPort()==-1?443:a.getPort())==(b.getPort()==-1?443:b.getPort());}catch(Exception e){return false;}
+    }
+    private void batchDialog(){
+        String source=base();
+        if(source.isEmpty()||!source.equals(currentCatalogSource)){toast("Set your authorized Fenrir Books API as the book source and load its catalog first.");return;}
+        ArrayList<Book> books=new ArrayList<>();ArrayList<String> kinds=new ArrayList<>();ArrayList<String> urls=new ArrayList<>();ArrayList<String> names=new ArrayList<>();
+        for(Book b:currentBooks){for(Map.Entry<String,String> f:b.links.entrySet()){if(sameOrigin(source,f.getValue())){books.add(b);kinds.add(f.getKey());urls.add(f.getValue());names.add(b.title+" · "+f.getKey());}}}
+        if(names.isEmpty()){toast("No eligible books in your catalog");return;}
+        boolean[] selected=new boolean[names.size()];
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Select books (up to 20)").setMultiChoiceItems(names.toArray(new String[0]),selected,(d,which,checked)->{selected[which]=checked;}).setNegativeButton("Cancel",null).setPositiveButton("Continue",null).create();
+        dialog.setOnShowListener(v->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(view->{
+            int count=0;for(boolean choice:selected)if(choice)count++;
+            if(count<1||count>20){toast("Select between 1 and 20 files");return;}
+            final int total=count;
+            new AlertDialog.Builder(this).setTitle("Queue "+total+" files?").setMessage("Only queue files from your own catalog or files you have explicit permission to download in bulk.").setNegativeButton("Cancel",null).setPositiveButton("Queue",(d,w)->{dialog.dismiss();for(int i=0;i<selected.length;i++)if(selected[i])enqueue(books.get(i).title,kinds.get(i),urls.get(i));toast("Selected files added to download queue");}).show();
+        }));dialog.show();
     }
     private static class Book{String title,author,description;Map<String,String> links=new LinkedHashMap<>();}
     private void addCard(Book book){
