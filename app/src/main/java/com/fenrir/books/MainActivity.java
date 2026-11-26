@@ -55,6 +55,7 @@ public class MainActivity extends Activity {
         LinearLayout nav=row();nav.addView(button("Discover",v->showCatalog()),weight());nav.addView(button("Downloads",v->{queueVisible=true;results.setVisibility(View.GONE);queue.setVisibility(View.VISIBLE);showDownloads();}),weight());body.addView(nav);
         LinearLayout options=row();options.addView(button("Book source",v->sourceDialog()),weight());options.addView(button("Add HTTPS link",v->directDialog()),weight());body.addView(options);
         body.addView(button("Browse websites",v->browserDialog()),full());
+        body.addView(button("Saved links",v->savedLinksDialog()),full());
         body.addView(button("Discord Files · Open in browser",v->openDiscordFiles()),full());
         search=new EditText(this);search.setSingleLine(true);search.setHint("Search title or author");search.setHintTextColor(MUTED);search.setTextColor(WHITE);search.setBackground(box(PANEL,12));search.setPadding(dp(14),dp(13),dp(14),dp(13));body.addView(search,full());search.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH);search.setOnEditorActionListener((v,a,e)->{load(false);return true;});
         body.addView(button("Search catalog",v->load(false)),full());
@@ -87,6 +88,27 @@ public class MainActivity extends Activity {
         if(!https(address)||kind==null)return;
         new AlertDialog.Builder(this).setTitle("Download "+kind+"?").setMessage(filename+"\nFrom: "+Uri.parse(address).getHost()+"\nOnly download books you have permission to save.").setNegativeButton("Cancel",null).setPositiveButton("Download",(d,w)->enqueue(filename,kind,address)).show();
     }
+    private JSONArray savedLinks(){try{return new JSONArray(prefs.getString("savedLinks","[]"));}catch(Exception e){return new JSONArray();}}
+    private void openExternal(String url){if(!https(url)){toast("Enter a valid HTTPS address");return;}try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(url)));}catch(android.content.ActivityNotFoundException e){toast("No browser installed");}}
+    private void saveLink(String title,String url){
+        if(!https(url)){toast("Enter a valid HTTPS address");return;}
+        if(url.length()>4096){toast("Link is too long");return;}
+        JSONArray links=savedLinks();
+        for(int i=0;i<links.length();i++)if(url.equals(links.optJSONObject(i).optString("url"))){toast("Link already saved");return;}
+        if(links.length()>=500){toast("Saved links list is full");return;}
+        try{JSONObject b=new JSONObject();b.put("title",title.trim().isEmpty()?Uri.parse(url).getHost():title.trim());b.put("url",url);links.put(b);prefs.edit().putString("savedLinks",links.toString()).apply();toast("Link saved");}catch(JSONException e){toast("Unable to save link");}
+    }
+    private void addSavedLinkDialog(){
+        LinearLayout fields=column();EditText title=new EditText(this);title.setHint("Label (optional)");EditText url=new EditText(this);url.setHint("https://website.example/page");url.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_URI);fields.addView(title);fields.addView(url);
+        new AlertDialog.Builder(this).setTitle("Save a link").setView(fields).setNegativeButton("Cancel",null).setPositiveButton("Save",(d,w)->saveLink(title.getText().toString(),url.getText().toString().trim())).show();
+    }
+    private void savedLinksDialog(){
+        JSONArray links=savedLinks();ArrayList<String> labels=new ArrayList<>();for(int i=0;i<links.length();i++){JSONObject item=links.optJSONObject(i);labels.add(item.optString("title")+"\n"+item.optString("url"));}
+        AlertDialog.Builder dialog=new AlertDialog.Builder(this).setTitle("Saved links").setNegativeButton("Close",null).setPositiveButton("Add link",(d,w)->addSavedLinkDialog());
+        if(labels.isEmpty())dialog.setMessage("Save web pages you want to revisit. Links are kept on this device.");
+        else dialog.setItems(labels.toArray(new String[0]),(d,i)->{JSONObject item=links.optJSONObject(i);new AlertDialog.Builder(this).setTitle(item.optString("title")).setMessage(item.optString("url")).setPositiveButton("Open in browser",(dd,ww)->openExternal(item.optString("url"))).setNeutralButton("Remove",(dd,ww)->{JSONArray fresh=savedLinks();for(int n=0;n<fresh.length();n++)if(item.optString("url").equals(fresh.optJSONObject(n).optString("url"))){fresh.remove(n);break;}prefs.edit().putString("savedLinks",fresh.toString()).apply();}).setNegativeButton("Cancel",null).show();});
+        dialog.show();
+    }
     private void openDiscordFiles(){
         try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse("https://server.elscione.com/Discord%20Files/")));}
         catch(android.content.ActivityNotFoundException e){toast("No browser installed");}
@@ -107,6 +129,7 @@ public class MainActivity extends Activity {
         LinearLayout nav=row();nav.addView(button("Back",v->{if(web.canGoBack())web.goBack();}),weight());nav.addView(button("Go",v->open.run()),weight());nav.addView(button("Close",v->dialog.dismiss()),weight());layout.addView(nav);layout.addView(address,full());
         LinearLayout shortcuts=row();shortcuts.addView(button("Elscione",v->{address.setText("https://server.elscione.com/");open.run();}),weight());shortcuts.addView(button("Open in browser",v->{String url=address.getText().toString();if(https(url))try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(url)));}catch(Exception e){toast("No browser installed");}}),weight());layout.addView(shortcuts);
         layout.addView(button("Discord Files · Open in browser",v->openDiscordFiles()),full());
+        LinearLayout bookmarks=row();bookmarks.addView(button("Save current page",v->{String url=web.getUrl();if(url!=null&&https(url))saveLink(web.getTitle()==null?"":web.getTitle(),url);else toast("Open a web page first");}),weight());bookmarks.addView(button("Saved links",v->savedLinksDialog()),weight());layout.addView(bookmarks);
         layout.addView(label("Tap a permitted file link to download. If a website requires verification or blocks this browser, use Open in browser.",13,MUTED),full());
         web.setWebViewClient(new WebViewClient(){
             @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request){
