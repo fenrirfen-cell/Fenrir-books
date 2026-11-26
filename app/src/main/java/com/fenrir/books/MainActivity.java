@@ -53,6 +53,7 @@ public class MainActivity extends Activity {
         LinearLayout nav=row();nav.addView(button("Discover",v->showCatalog()),weight());nav.addView(button("Downloads",v->{queueVisible=true;results.setVisibility(View.GONE);queue.setVisibility(View.VISIBLE);showDownloads();}),weight());body.addView(nav);
         LinearLayout options=row();options.addView(button("Book source",v->sourceDialog()),weight());options.addView(button("Add HTTPS link",v->directDialog()),weight());body.addView(options);
         body.addView(button("Browse websites",v->browserDialog()),full());
+        body.addView(button("Discord Files · Open in browser",v->openDiscordFiles()),full());
         search=new EditText(this);search.setSingleLine(true);search.setHint("Search title or author");search.setHintTextColor(MUTED);search.setTextColor(WHITE);search.setBackground(box(PANEL,12));search.setPadding(dp(14),dp(13),dp(14),dp(13));body.addView(search,full());search.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH);search.setOnEditorActionListener((v,a,e)->{load(false);return true;});
         body.addView(button("Search catalog",v->load(false)),full());
         status=label("",14,MUTED);body.addView(status,full());results=column();body.addView(results,full());queue=column();queue.setVisibility(View.GONE);body.addView(queue,full());
@@ -83,6 +84,10 @@ public class MainActivity extends Activity {
         if(!https(address)||kind==null)return;
         new AlertDialog.Builder(this).setTitle("Download "+kind+"?").setMessage(filename+"\nFrom: "+Uri.parse(address).getHost()+"\nOnly download books you have permission to save.").setNegativeButton("Cancel",null).setPositiveButton("Download",(d,w)->enqueue(filename,kind,address)).show();
     }
+    private void openDiscordFiles(){
+        try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse("https://server.elscione.com/Discord%20Files/")));}
+        catch(android.content.ActivityNotFoundException e){toast("No browser installed");}
+    }
     private void browserDialog(){
         android.app.Dialog dialog=new android.app.Dialog(this,android.R.style.Theme_Material_NoActionBar);
         LinearLayout layout=column();layout.setBackgroundColor(BG);layout.setPadding(dp(10),dp(14),dp(10),dp(10));
@@ -98,6 +103,7 @@ public class MainActivity extends Activity {
         Runnable open=()->{String url=address.getText().toString().trim();if(!url.contains("://"))url="https://"+url;if(!https(url)){toast("Use an HTTPS website");return;}prefs.edit().putString("lastWebsite",url).apply();web.loadUrl(url);};
         LinearLayout nav=row();nav.addView(button("Back",v->{if(web.canGoBack())web.goBack();}),weight());nav.addView(button("Go",v->open.run()),weight());nav.addView(button("Close",v->dialog.dismiss()),weight());layout.addView(nav);layout.addView(address,full());
         LinearLayout shortcuts=row();shortcuts.addView(button("Elscione",v->{address.setText("https://server.elscione.com/");open.run();}),weight());shortcuts.addView(button("Open in browser",v->{String url=address.getText().toString();if(https(url))try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(url)));}catch(Exception e){toast("No browser installed");}}),weight());layout.addView(shortcuts);
+        layout.addView(button("Discord Files · Open in browser",v->openDiscordFiles()),full());
         layout.addView(label("Tap a permitted file link to download. If a website requires verification or blocks this browser, use Open in browser.",13,MUTED),full());
         web.setWebViewClient(new WebViewClient(){
             @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request){
